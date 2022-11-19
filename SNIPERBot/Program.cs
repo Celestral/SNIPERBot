@@ -11,7 +11,6 @@ public class Program
 {
     private DiscordSocketClient _client;
     private InteractionService _interactionService;
-    private readonly ulong _guildId = 990594846563647578;
     private readonly IServiceProvider _serviceProvider;
 
     public Program()
@@ -62,7 +61,7 @@ public class Program
         {
             _interactionService = new InteractionService(_client);
             await _interactionService.AddModulesAsync(Assembly.GetEntryAssembly(), _serviceProvider);
-            await _interactionService.RegisterCommandsToGuildAsync(_guildId);
+            await _interactionService.RegisterCommandsToGuildAsync(Settings.GuildId);
 
             _client.InteractionCreated += async interaction =>
             {
