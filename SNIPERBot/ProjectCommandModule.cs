@@ -1,5 +1,6 @@
 ﻿using Discord;
 using Discord.Interactions;
+using Discord.Rest;
 using Discord.WebSocket;
 using Newtonsoft.Json;
 using System;
@@ -83,16 +84,33 @@ namespace SNIPERBot
             var role = _guild.GetRole(project.RoleID);
             var channel = _guild.GetChannel(project.ChannelID);
 
-            //TODO: try+catch
-            await role.DeleteAsync();
-            await channel.DeleteAsync();
+            await DeferAsync();
+            var isConfirmed = await InteractionUtility.ConfirmAsync(_client, Context.Channel, TimeSpan.FromSeconds(10), "Are you sure you want to delete " + project.Name + "?");
 
-            _projects.Remove(project);
+            if (isConfirmed)
+            {
+                try
+                {
+                    await role.DeleteAsync();
+                    await channel.DeleteAsync();
 
-            var json = JsonConvert.SerializeObject(_projects);
-            File.WriteAllText("projects.json", json);
+                    _projects.Remove(project);
 
-            await component.Message.DeleteAsync();
+
+                    var json = JsonConvert.SerializeObject(_projects);
+                    File.WriteAllText("projects.json", json);
+
+                    await component.Message.DeleteAsync();
+                }
+                catch (Exception)
+                {
+
+                    throw;
+                }
+            }
+            else
+            {
+            }
         }
 
         [ComponentInteraction("update-button")]
@@ -118,6 +136,13 @@ namespace SNIPERBot
             await DeferAsync();
         }
 
+        // test createhiddenchannel with queen role
+        [ComponentInteraction("edit-button")]
+        private async Task EditProject()
+        {
+            await Context.Interaction.RespondWithModalAsync<ProjectModal>("edit_project");
+        }
+
         #endregion
 
         #region Modal Interactions
@@ -131,7 +156,7 @@ namespace SNIPERBot
         public async Task ModalResponse(ProjectModal modal)
         {
             var role = await _guild.CreateRoleAsync(modal.Name);
-            var projectChannel = await _guild.CreateTextChannelAsync(modal.Name, x => { x.CategoryId = Settings.TestCategoryID; });
+            var projectChannel = await CreateHiddenChannel(modal.Name, role);
 
             var project = new Project();
             project.Id = _projects.Any() ? _projects.Max(x => x.Id) + 1 : 1;
@@ -149,7 +174,7 @@ namespace SNIPERBot
 
             var buttons = new ComponentBuilder()
                     .WithButton("Updates", "update-button", ButtonStyle.Primary, new Emoji("✨"))
-                    .WithButton("Whitelist", "whitelist-button")
+                    .WithButton("Edit", "edit-button", ButtonStyle.Secondary)
                     .WithButton("Delete", "delete-button", ButtonStyle.Danger);
 
             var footer = new EmbedFooterBuilder()
@@ -186,8 +211,93 @@ namespace SNIPERBot
             var channel = _guild.GetChannel(Settings.ProjectsChannelID);
 
             ISocketMessageChannel socketMessageChannel = (ISocketMessageChannel)channel;
-            await socketMessageChannel.SendMessageAsync(embed: embedBuiler.Build(), components: buttons.Build());
+            var message = await socketMessageChannel.SendMessageAsync(embed: embedBuiler.Build(), components: buttons.Build());
+            project.EmbedID = message.Id;
             await DeferAsync();
+        }
+
+        [ModalInteraction("edit_project")]
+        public async Task<ProjectModal> EditModalResponse(ProjectModal modal)
+        {
+            var test = Context.Interaction;
+            var test2 = GetOriginalResponseAsync();
+
+            var interaction = (SocketModal)Context.Interaction;
+            var component = (SocketModal)Context.Interaction;
+
+            return modal;
+
+            /*
+            var embed = component.Message.Embeds.FirstOrDefault();
+            int projectID = int.Parse(embed.Footer.Value.Text);
+
+            var project = _projects.FirstOrDefault(x => x.Id == projectID);
+
+            project.Name = modal.Name;
+            project.Description = modal.Description;
+            project.Twitter = modal.Twitter;
+            project.Discord = modal.Discord;
+
+            var json = JsonConvert.SerializeObject(_projects);
+            File.WriteAllText("projects.json", json);
+
+            var buttons = new ComponentBuilder()
+                    .WithButton("Updates", "update-button", ButtonStyle.Primary, new Emoji("✨"))
+                    .WithButton("Edit", "edit-button", ButtonStyle.Secondary)
+                    .WithButton("Delete", "delete-button", ButtonStyle.Danger);
+
+            var footer = new EmbedFooterBuilder()
+                .WithText(project.Id.ToString());
+
+            var embedBuiler = new EmbedBuilder()
+                        .WithTitle(project.Name)
+                        .WithDescription(project.Description)
+                        .WithColor(Color.Blue)
+                        .WithFooter(footer)
+                        .WithCurrentTimestamp()
+                        .WithAuthor(Context.User);
+
+            var twitterField = new EmbedFieldBuilder()
+            .WithName("Twitter")
+            .WithIsInline(true);
+
+            if (!string.IsNullOrEmpty(project.Twitter))
+            {
+                twitterField.WithValue(project.Twitter);
+                embedBuiler.AddField(twitterField);
+            }
+
+            var discordField = new EmbedFieldBuilder()
+            .WithName("Discord")
+            .WithIsInline(true);
+
+            if (!string.IsNullOrEmpty(project.Discord))
+            {
+                discordField.WithValue(project.Discord);
+                embedBuiler.AddField(discordField);
+            }
+
+            var message = component.Message;
+            await message.ModifyAsync(x => x.Embed = embedBuiler.Build());
+            */
+            await DeferAsync();
+        }
+
+        private async Task<RestTextChannel> CreateHiddenChannel(string projectName, IRole projectRole)
+        {
+            var channel = await _guild.CreateTextChannelAsync(projectName, x => { x.CategoryId = Settings.TestCategoryID; });
+
+            var bot_permissions = new OverwritePermissions();
+            bot_permissions = bot_permissions.Modify(viewChannel: PermValue.Allow, manageChannel:PermValue.Allow, manageRoles:PermValue.Allow);
+
+            var regular_permissions = new OverwritePermissions();
+            regular_permissions = regular_permissions.Modify(viewChannel: PermValue.Allow, sendMessages: PermValue.Allow, addReactions:PermValue.Allow, readMessageHistory:PermValue.Allow);
+                
+            await channel.AddPermissionOverwriteAsync(_guild.GetRole(Settings.SniperBotRole), bot_permissions);
+            await channel.AddPermissionOverwriteAsync(_guild.GetRole(Settings.EveryoneRole), OverwritePermissions.DenyAll(channel));
+            await channel.AddPermissionOverwriteAsync(projectRole, regular_permissions);
+
+            return channel;
         }
         #endregion
 

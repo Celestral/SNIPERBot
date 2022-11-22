@@ -14,7 +14,7 @@ namespace SNIPERBot
         public string Twitter { get; set; }
         public string Discord { get; set; }
 
-        public string EmbedURL { get; set; }
+        public ulong EmbedID { get; set; }
         public ulong ChannelID { get; set; }
         public ulong RoleID { get; set; }
     }
