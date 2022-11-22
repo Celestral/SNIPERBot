@@ -140,7 +140,34 @@ namespace SNIPERBot
         [ComponentInteraction("edit-button")]
         private async Task EditProject()
         {
-            await Context.Interaction.RespondWithModalAsync<ProjectModal>("edit_project");
+            var component = (SocketMessageComponent)Context.Interaction;
+            var embed = component.Message.Embeds.FirstOrDefault();
+            var projectId = embed?.Footer?.Text ?? "-1";
+
+            var project = _projects.First(x => x.Id == Convert.ToInt32(projectId));
+            
+            var mb = new ModalBuilder()
+                .WithTitle("Change MEEEEEE")
+                .WithCustomId($"edit_project-{projectId}")
+                .AddTextInput("Project Name", "project_name", placeholder: "Project name", value: project.Name)
+                .AddTextInput("Project Name", "project_description", placeholder: "Optional description of project", value: project.Description, required: false)
+                .AddTextInput("Twitter", "project_twitter", placeholder: "Twitter link", value: project.Twitter, required: false)
+                .AddTextInput("Discord", "project_discord", placeholder: "Discord link", value: project.Discord, required: false);
+
+            await Context.Interaction.RespondWithModalAsync(mb.Build());
+
+            //await Context.Interaction.RespondWithModalAsync<ProjectModal>($"edit_project-{projectId}", RequestOptions.Default, builder => ModifyModal(builder, projectId));
+        }
+
+        private void ModifyModal(ModalBuilder obj, string projectId)
+        {
+            var project = _projects.First(x => x.Id == Convert.ToInt32(projectId));
+
+            //((TextInputComponent)obj.Components.ActionRows.Select(x => x.Components.First(x => x.CustomId == "project_name")).First()).Value = project.Name;
+            
+            foreach (var objComponent in obj.Components.ActionRows)
+            {
+            }
         }
 
         #endregion
@@ -216,16 +243,16 @@ namespace SNIPERBot
             await DeferAsync();
         }
 
-        [ModalInteraction("edit_project")]
-        public async Task<ProjectModal> EditModalResponse(ProjectModal modal)
+        [ModalInteraction("edit_project-*")]
+        public async Task EditModalResponse(string id, ProjectModal modal)
         {
+            var projectId = Convert.ToInt32(id);
+
             var test = Context.Interaction;
             var test2 = GetOriginalResponseAsync();
 
             var interaction = (SocketModal)Context.Interaction;
             var component = (SocketModal)Context.Interaction;
-
-            return modal;
 
             /*
             var embed = component.Message.Embeds.FirstOrDefault();
@@ -288,11 +315,11 @@ namespace SNIPERBot
             var channel = await _guild.CreateTextChannelAsync(projectName, x => { x.CategoryId = Settings.TestCategoryID; });
 
             var bot_permissions = new OverwritePermissions();
-            bot_permissions = bot_permissions.Modify(viewChannel: PermValue.Allow, manageChannel:PermValue.Allow, manageRoles:PermValue.Allow);
+            bot_permissions = bot_permissions.Modify(viewChannel: PermValue.Allow, manageChannel: PermValue.Allow, manageRoles: PermValue.Allow);
 
             var regular_permissions = new OverwritePermissions();
-            regular_permissions = regular_permissions.Modify(viewChannel: PermValue.Allow, sendMessages: PermValue.Allow, addReactions:PermValue.Allow, readMessageHistory:PermValue.Allow);
-                
+            regular_permissions = regular_permissions.Modify(viewChannel: PermValue.Allow, sendMessages: PermValue.Allow, addReactions: PermValue.Allow, readMessageHistory: PermValue.Allow);
+
             await channel.AddPermissionOverwriteAsync(_guild.GetRole(Settings.SniperBotRole), bot_permissions);
             await channel.AddPermissionOverwriteAsync(_guild.GetRole(Settings.EveryoneRole), OverwritePermissions.DenyAll(channel));
             await channel.AddPermissionOverwriteAsync(projectRole, regular_permissions);
