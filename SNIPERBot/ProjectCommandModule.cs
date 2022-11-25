@@ -36,22 +36,35 @@ namespace SNIPERBot
         /// Responds with a basic list of all projects
         /// </summary>
         /// <returns></returns>
-        [SlashCommand("get-projects", "Gets the list for all registered projects")]
+        [SlashCommand("get-projects", "Gets the list for all registered projects and their embed URL")]
         public async Task GetProjects()
         {
-            var message = "";
             if (_projects.Count != 0)
             {
+                EmbedBuilder builder = new EmbedBuilder()
+                    .WithTitle("Projects currently available");
+
+                ISocketMessageChannel channel = (ISocketMessageChannel) _guild.GetChannel(Settings.ProjectsChannelID);
+
                 foreach (var project in _projects)
                 {
-                    message += project.Name + ", ";
+                    var embedMessage = await channel.GetMessageAsync(project.EmbedID);
+                    var embedURL = embedMessage.GetJumpUrl();
+
+                    //builder.Description += $"[{project.Name}]({embedURL})\n";
+
+                    EmbedFieldBuilder field = new EmbedFieldBuilder()
+                        .WithName(project.Name)
+                        .WithValue($"[Details]({embedURL})");
+
+                    builder.AddField(field);
                 }
 
-                await Context.Interaction.RespondAsync(message);
+                await Context.Interaction.RespondAsync(embed: builder.Build(), ephemeral: true);
             }
             else
             {
-                await Context.Interaction.RespondAsync("No projects have been added yet");
+                await Context.Interaction.RespondAsync("No projects have been added yet", ephemeral: true);
             }
         }
 
@@ -70,50 +83,27 @@ namespace SNIPERBot
         #region Component Interactions
 
         /// <summary>
-        /// Deletes a project through a button attached to an embed and deletes the embed too
+        /// Deletes a project, role, channel and embed through a button attached to the embed
         /// </summary>
         /// <returns></returns>
         [ComponentInteraction("delete-button")]
         private async Task DeleteProjectThroughButton()
         {
+            // Get the project data, role and channel sockets
             var component = (SocketMessageComponent)Context.Interaction;
             var embed = component.Message.Embeds.FirstOrDefault();
             int projectID = int.Parse(embed.Footer.Value.Text);
 
-            var project = _projects.FirstOrDefault(x => x.Id == projectID);
-            var role = _guild.GetRole(project.RoleID);
-            var channel = _guild.GetChannel(project.ChannelID);
-
             await DeferAsync();
-            var isConfirmed = await InteractionUtility.ConfirmAsync(_client, Context.Channel, TimeSpan.FromSeconds(10), "Are you sure you want to delete " + project.Name + "?");
+            var isConfirmed = await InteractionUtility.ConfirmAsync(_client, Context.Channel, TimeSpan.FromSeconds(10), "Are you sure you want to delete " + embed.Title + "?");
 
             if (isConfirmed)
             {
-                try
-                {
-                    await role.DeleteAsync();
-                    await channel.DeleteAsync();
-
-                    _projects.Remove(project);
-
-
-                    var json = JsonConvert.SerializeObject(_projects);
-                    File.WriteAllText("projects.json", json);
-
-                    await component.Message.DeleteAsync();
-                }
-                catch (Exception)
-                {
-
-                    throw;
-                }
-            }
-            else
-            {
+                DeleteProject(projectID, component);                
             }
         }
 
-        [ComponentInteraction("update-button")]
+        [ComponentInteraction("role-button")]
         private async Task AssignUpdateRole()
         {
             var component = (SocketMessageComponent)Context.Interaction;
@@ -122,16 +112,7 @@ namespace SNIPERBot
 
             var project = _projects.FirstOrDefault(x => x.Id == projectID);
 
-            var role = _guild.GetRole(project.RoleID);
-            var member = _guild.Users.First(x => x.Id == component.User.Id);
-            if (member.Roles.FirstOrDefault(x => x.Id == project.RoleID) != null)
-            {
-                await member.RemoveRoleAsync(role);
-            }
-            else
-            {
-                await member.AddRoleAsync(role);
-            }
+            await GiveOrRemoveRole(project.RoleID, component.User.Id);
 
             await DeferAsync();
         }
@@ -144,30 +125,45 @@ namespace SNIPERBot
             var embed = component.Message.Embeds.FirstOrDefault();
             var projectId = embed?.Footer?.Text ?? "-1";
 
-            var project = _projects.First(x => x.Id == Convert.ToInt32(projectId));
-            
-            var mb = new ModalBuilder()
-                .WithTitle("Change MEEEEEE")
-                .WithCustomId($"edit_project-{projectId}")
-                .AddTextInput("Project Name", "project_name", placeholder: "Project name", value: project.Name)
-                .AddTextInput("Project Name", "project_description", placeholder: "Optional description of project", value: project.Description, required: false)
-                .AddTextInput("Twitter", "project_twitter", placeholder: "Twitter link", value: project.Twitter, required: false)
-                .AddTextInput("Discord", "project_discord", placeholder: "Discord link", value: project.Discord, required: false);
-
-            await Context.Interaction.RespondWithModalAsync(mb.Build());
-
-            //await Context.Interaction.RespondWithModalAsync<ProjectModal>($"edit_project-{projectId}", RequestOptions.Default, builder => ModifyModal(builder, projectId));
+            await Context.Interaction.RespondWithModalAsync<ProjectModal>($"edit_project-{projectId}", RequestOptions.Default, builder => ModifyModal(builder, projectId));
         }
 
         private void ModifyModal(ModalBuilder obj, string projectId)
         {
             var project = _projects.First(x => x.Id == Convert.ToInt32(projectId));
+            var projectModal = new ProjectModal();
+            projectModal.Name = project.Name;
+            projectModal.Description = project.Description;
+            projectModal.Twitter = project.Twitter;
+            projectModal.Discord = project.Discord;
 
-            //((TextInputComponent)obj.Components.ActionRows.Select(x => x.Components.First(x => x.CustomId == "project_name")).First()).Value = project.Name;
-            
-            foreach (var objComponent in obj.Components.ActionRows)
+            var projectModalType = typeof(ProjectModal);
+            var listofmembers = new Dictionary<string, object>();
+
+            obj.Components = new ModalComponentBuilder();
+            foreach (var prop in projectModalType.GetProperties())
             {
+                if (prop.Name != "Title")
+                {
+                    var attributes = prop.CustomAttributes.ToArray();
+                    var componentBuilder = new TextInputBuilder();
+                    RequiredInputAttribute requiredAttribute = (RequiredInputAttribute) prop.GetCustomAttributes(typeof(RequiredInputAttribute), false)[0];
+                    componentBuilder.Required = requiredAttribute.IsRequired;
+
+                    ModalTextInputAttribute customIDAttribute = (ModalTextInputAttribute) prop.GetCustomAttributes(typeof(ModalTextInputAttribute), false)[0];
+                    componentBuilder.CustomId = customIDAttribute.CustomId;
+                    componentBuilder.Style = customIDAttribute.Style;
+                    componentBuilder.Placeholder = customIDAttribute.Placeholder;
+                    componentBuilder.MaxLength = customIDAttribute.MaxLength;
+
+                    InputLabelAttribute inputLabelAttribute = (InputLabelAttribute)prop.GetCustomAttributes(typeof(InputLabelAttribute), false)[0];
+                    componentBuilder.Label = inputLabelAttribute.Label;
+
+                    componentBuilder.Value = (string) prop.GetValue(projectModal);
+                    obj.AddTextInput(componentBuilder);
+                }
             }
+            obj.Build();
         }
 
         #endregion
@@ -194,13 +190,75 @@ namespace SNIPERBot
             project.RoleID = role.Id;
             project.ChannelID = projectChannel.Id;
 
+            var buttons = new ComponentBuilder()
+                    .WithButton("Role", "role-button", ButtonStyle.Primary, new Emoji("✨"))
+                    .WithButton("Edit", "edit-button", ButtonStyle.Secondary)
+                    .WithButton("Delete", "delete-button", ButtonStyle.Danger);
+
+            var footer = new EmbedFooterBuilder()
+                .WithText(project.Id.ToString());
+
+            var embedBuilder = new EmbedBuilder()
+                        .WithTitle(project.Name)
+                        .WithDescription(project.Description)
+                        .WithColor(Color.Blue)
+                        .WithFooter(footer)
+                        .WithCurrentTimestamp()
+                        .WithAuthor(Context.User);
+
+            var twitterField = new EmbedFieldBuilder()
+            .WithName("Twitter")
+            .WithIsInline(true);
+
+            if (!string.IsNullOrEmpty(project.Twitter))
+            {
+                twitterField.WithValue(project.Twitter);
+                embedBuilder.AddField(twitterField);
+            }
+
+            var discordField = new EmbedFieldBuilder()
+            .WithName("Discord")
+            .WithIsInline(true);
+
+            if (!string.IsNullOrEmpty(project.Discord))
+            {
+                discordField.WithValue(project.Discord);
+                embedBuilder.AddField(discordField);
+            }
+
+            var channel = _guild.GetChannel(Settings.ProjectsChannelID);
+
+            ISocketMessageChannel socketMessageChannel = (ISocketMessageChannel)channel;
+            var message = await socketMessageChannel.SendMessageAsync(embed: embedBuilder.Build(), components: buttons.Build());
+            project.EmbedID = message.Id;
+
             _projects.Add(project);
 
             var json = JsonConvert.SerializeObject(_projects);
             File.WriteAllText("projects.json", json);
 
+            await DeferAsync();
+        }
+
+        [ModalInteraction("edit_project-*")]
+        public async Task EditModalResponse(string id, ProjectModal modal)
+        {
+            var projectId = Convert.ToInt32(id);
+
+            var project = _projects.First(x => x.Id == Convert.ToInt32(projectId));
+
+            var previousName = project.Name;
+
+            project.Name = modal.Name;
+            project.Description = modal.Description;
+            project.Twitter = modal.Twitter;
+            project.Discord = modal.Discord;
+
+            var json = JsonConvert.SerializeObject(_projects);
+            File.WriteAllText("projects.json", json);
+
             var buttons = new ComponentBuilder()
-                    .WithButton("Updates", "update-button", ButtonStyle.Primary, new Emoji("✨"))
+                    .WithButton("Role", "role-button", ButtonStyle.Primary, new Emoji("✨"))
                     .WithButton("Edit", "edit-button", ButtonStyle.Secondary)
                     .WithButton("Delete", "delete-button", ButtonStyle.Danger);
 
@@ -237,76 +295,19 @@ namespace SNIPERBot
 
             var channel = _guild.GetChannel(Settings.ProjectsChannelID);
 
+
             ISocketMessageChannel socketMessageChannel = (ISocketMessageChannel)channel;
-            var message = await socketMessageChannel.SendMessageAsync(embed: embedBuiler.Build(), components: buttons.Build());
-            project.EmbedID = message.Id;
-            await DeferAsync();
-        }
+            var message = await socketMessageChannel.ModifyMessageAsync(project.EmbedID, (x => { x.Embed = embedBuiler.Build(); x.Components = buttons.Build(); })); //await socketMessageChannel.GetMessageAsync(project.EmbedID); //SendMessageAsync(embed: embedBuiler.Build(), components: buttons.Build());
 
-        [ModalInteraction("edit_project-*")]
-        public async Task EditModalResponse(string id, ProjectModal modal)
-        {
-            var projectId = Convert.ToInt32(id);
-
-            var test = Context.Interaction;
-            var test2 = GetOriginalResponseAsync();
-
-            var interaction = (SocketModal)Context.Interaction;
-            var component = (SocketModal)Context.Interaction;
-
-            /*
-            var embed = component.Message.Embeds.FirstOrDefault();
-            int projectID = int.Parse(embed.Footer.Value.Text);
-
-            var project = _projects.FirstOrDefault(x => x.Id == projectID);
-
-            project.Name = modal.Name;
-            project.Description = modal.Description;
-            project.Twitter = modal.Twitter;
-            project.Discord = modal.Discord;
-
-            var json = JsonConvert.SerializeObject(_projects);
-            File.WriteAllText("projects.json", json);
-
-            var buttons = new ComponentBuilder()
-                    .WithButton("Updates", "update-button", ButtonStyle.Primary, new Emoji("✨"))
-                    .WithButton("Edit", "edit-button", ButtonStyle.Secondary)
-                    .WithButton("Delete", "delete-button", ButtonStyle.Danger);
-
-            var footer = new EmbedFooterBuilder()
-                .WithText(project.Id.ToString());
-
-            var embedBuiler = new EmbedBuilder()
-                        .WithTitle(project.Name)
-                        .WithDescription(project.Description)
-                        .WithColor(Color.Blue)
-                        .WithFooter(footer)
-                        .WithCurrentTimestamp()
-                        .WithAuthor(Context.User);
-
-            var twitterField = new EmbedFieldBuilder()
-            .WithName("Twitter")
-            .WithIsInline(true);
-
-            if (!string.IsNullOrEmpty(project.Twitter))
+            if (previousName != project.Name)
             {
-                twitterField.WithValue(project.Twitter);
-                embedBuiler.AddField(twitterField);
+                var role = _guild.GetRole(project.RoleID);
+                var projectChannel = _guild.GetChannel(project.ChannelID);
+
+                await role.ModifyAsync(x => x.Name = project.Name);
+                await projectChannel.ModifyAsync(x => x.Name = project.Name);
             }
 
-            var discordField = new EmbedFieldBuilder()
-            .WithName("Discord")
-            .WithIsInline(true);
-
-            if (!string.IsNullOrEmpty(project.Discord))
-            {
-                discordField.WithValue(project.Discord);
-                embedBuiler.AddField(discordField);
-            }
-
-            var message = component.Message;
-            await message.ModifyAsync(x => x.Embed = embedBuiler.Build());
-            */
             await DeferAsync();
         }
 
@@ -329,30 +330,69 @@ namespace SNIPERBot
         #endregion
 
         #region Helper Methods
+        private async Task GiveOrRemoveRole(ulong roleID, ulong userID)
+        {
+            var role = _guild.GetRole(roleID);
+            var member = _guild.Users.First(x => x.Id == userID);
+            if (member.Roles.FirstOrDefault(x => x.Id == roleID) != null)
+            {
+                await member.RemoveRoleAsync(role);
+            }
+            else
+            {
+                await member.AddRoleAsync(role);
+            }
+        }
 
-        #endregion
-    }
+        private async Task DeleteProject(int projectID, SocketMessageComponent embedMessage)
+        {
+            var project = _projects.FirstOrDefault(x => x.Id == projectID);
+
+            var role = _guild.GetRole(project.RoleID);
+            var channel = _guild.GetChannel(project.ChannelID);
+
+            try
+            {
+                await role.DeleteAsync();
+                await channel.DeleteAsync();
+
+                _projects.Remove(project);
+
+
+                var json = JsonConvert.SerializeObject(_projects);
+                File.WriteAllText("projects.json", json);
+
+                await embedMessage.Message.DeleteAsync();
+            }
+            catch (Exception e)
+            {
+                await embedMessage.RespondAsync("Something went wrong trying to delete the project: " + e.Message, ephemeral: true);
+            }
+        }
+            #endregion
+        }
 
     public class ProjectModal : IModal
     {
         public string Title => "Add a new project";
-        [InputLabel("Project Name")]
         [ModalTextInput("project_name", placeholder: "Project name", maxLength: 20)]
+        [RequiredInput(true)]
+        [InputLabel("Project Name")]
         public string Name { get; set; }
 
+        [ModalTextInput("project_description", style: TextInputStyle.Paragraph, placeholder: "Optional description of project", maxLength: 500)]
         [RequiredInput(false)]
         [InputLabel("Description")]
-        [ModalTextInput("project_description", placeholder: "Optional description of project", maxLength: 500)]
         public string Description { get; set; }
 
+        [ModalTextInput("project_twitter", placeholder: "Twitter link", maxLength: 40)]
         [RequiredInput(false)]
         [InputLabel("Twitter")]
-        [ModalTextInput("project_twitter", placeholder: "Twitter link", maxLength: 40)]
         public string Twitter { get; set; }
 
+        [ModalTextInput("project_discord", placeholder: "Discord link", maxLength: 40)]
         [RequiredInput(false)]
         [InputLabel("Discord")]
-        [ModalTextInput("project_discord", placeholder: "Discord link", maxLength: 40)]
         public string Discord { get; set; }
     }
 }
