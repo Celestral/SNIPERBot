@@ -14,20 +14,22 @@ namespace SNIPERBot
     public class ProjectCommandModule : InteractionModuleBase<SocketInteractionContext>
     {
         private static List<Project> _projects = new List<Project>();
-        private static DiscordSocketClient _client;
+        private DiscordSocketClient _client;
         private static SocketGuild _guild;
+        private LoggingService _loggingService;
 
         /// <summary>
         /// Reads existing projects from file during startup
         /// </summary>
         /// <param name="client"></param>
-        public ProjectCommandModule(DiscordSocketClient client)
+        public ProjectCommandModule(DiscordSocketClient client, LoggingService loggingService)
         {
             if (File.Exists("projects.json"))
             {
                 _projects = JsonConvert.DeserializeObject<List<Project>>(File.ReadAllText("projects.json"));
             }
             _client = client;
+            _loggingService = loggingService;
             _guild = _client.GetGuild(Settings.GuildId);
         }
         #region Slash Commands
@@ -70,6 +72,7 @@ namespace SNIPERBot
         /// Responds with a Modal form for adding a new project
         /// </summary>
         /// <returns></returns>
+        [RequireRole(Settings.ProjectManagerRole)]
         [SlashCommand("add-project", "Add a project to the bot!")]
         public async Task AddProject()
         {
@@ -84,6 +87,7 @@ namespace SNIPERBot
         /// Deletes a project, role, channel and embed through a button attached to the embed
         /// </summary>
         /// <returns></returns>
+        [RequireRole(Settings.ProjectManagerRole)]
         [ComponentInteraction("delete-button")]
         private async Task DeleteProjectThroughButton()
         {
@@ -118,6 +122,7 @@ namespace SNIPERBot
         /// Edit a project's information, (optional) role and channel name, and replaces the embed
         /// </summary>
         /// <returns></returns>
+        [RequireRole(Settings.ProjectManagerRole)]
         [ComponentInteraction("edit-button")]
         private async Task EditProject()
         {
@@ -152,6 +157,7 @@ namespace SNIPERBot
 
             SaveProjects();
 
+            Task.Run(() => _loggingService.LogAsync(LogType.ProjectAdded, Context, project));
             await Context.Interaction.RespondAsync(project.Name + $" has been added to the Projects list. Find the embed [here]({message.GetJumpUrl()})", ephemeral: true);
         }
 
@@ -168,12 +174,9 @@ namespace SNIPERBot
 
             var project = _projects.FirstOrDefault(x => x.Id == Convert.ToInt32(projectId));
 
-            var previousName = project.Name;
+            var oldProjectDetails = CopyProjectDetails(project);
 
-            project.Name = modal.Name;
-            project.Description = modal.Description;
-            project.Twitter = modal.Twitter;
-            project.Discord = modal.Discord;
+            project = EditProjectDetails(project, modal);
 
             SaveProjects();
 
@@ -185,7 +188,7 @@ namespace SNIPERBot
             ISocketMessageChannel socketMessageChannel = (ISocketMessageChannel)channel;
             var message = await socketMessageChannel.ModifyMessageAsync(project.EmbedID, (x => { x.Embed = embed.Build(); x.Components = buttons.Build(); })); //await socketMessageChannel.GetMessageAsync(project.EmbedID); //SendMessageAsync(embed: embedBuiler.Build(), components: buttons.Build());
 
-            if (previousName != project.Name)
+            if (oldProjectDetails.Name != project.Name)
             {
                 var role = _guild.GetRole(project.RoleID);
                 var projectChannel = _guild.GetChannel(project.ChannelID);
@@ -194,6 +197,7 @@ namespace SNIPERBot
                 await projectChannel.ModifyAsync(x => x.Name = project.Name);
             }
 
+            Task.Run(() => _loggingService.LogAsync(LogType.ProjectEdited, Context, project, oldProjectDetails));
             await DeferAsync();
         }
         #endregion
@@ -205,7 +209,7 @@ namespace SNIPERBot
         /// </summary>
         private void SaveProjects()
         {
-            var json = JsonConvert.SerializeObject(_projects);
+            var json = JsonConvert.SerializeObject(_projects, Formatting.Indented);
             File.WriteAllText("projects.json", json);
         }
 
@@ -221,6 +225,18 @@ namespace SNIPERBot
             int projectID = int.Parse(embed.Footer.Value.Text);
 
             return projectID;
+        }
+
+        private Project CopyProjectDetails(Project project)
+        {
+            var copiedProject = new Project();
+            var projectType = typeof(Project);
+
+            foreach (var prop in projectType.GetProperties())
+            {
+                prop.SetValue(copiedProject, prop.GetValue(project));
+            }
+            return copiedProject;
         }
 
         /// <summary>
@@ -269,6 +285,21 @@ namespace SNIPERBot
             project.Discord = modal.Discord;
             project.RoleID = await CreateProjectRole(project.Name);
             project.ChannelID = await CreateProjectChannel(project.Name, project.RoleID);
+
+            return project;
+        }
+
+        /// <summary>
+        /// Edits project from the modal data
+        /// </summary>
+        /// <param name="modal"></param>
+        /// <returns>project</returns>
+        private Project EditProjectDetails(Project project, ProjectModal modal)
+        {
+            project.Name = modal.Name;
+            project.Description = modal.Description;
+            project.Twitter = modal.Twitter;
+            project.Discord = modal.Discord;
 
             return project;
         }
@@ -323,6 +354,7 @@ namespace SNIPERBot
 
                 await embedMessage.Message.DeleteAsync();
                 var followUp = await embedMessage.FollowupAsync($"Succesfully deleted {projectName}", ephemeral: true);
+                Task.Run(() => _loggingService.LogAsync(LogType.ProjectDeleted, Context, project));
 
                 await Task.Delay(5000);
                 followUp.DeleteAsync();

@@ -27,7 +27,8 @@ public class Program
 
         var collection = new ServiceCollection()
             .AddSingleton(config)
-            .AddSingleton<DiscordSocketClient>();
+            .AddSingleton<DiscordSocketClient>()
+            .AddSingleton<LoggingService>();
 
         return collection.BuildServiceProvider();
     }
@@ -38,7 +39,6 @@ public class Program
     {
         _client = _serviceProvider.GetRequiredService<DiscordSocketClient>();
        
-
         _client.Log += async (msg) =>
         {
             await Task.CompletedTask;
