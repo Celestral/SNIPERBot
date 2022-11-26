@@ -72,7 +72,8 @@ namespace SNIPERBot
         /// Responds with a Modal form for adding a new project
         /// </summary>
         /// <returns></returns>
-        [RequireRole(Settings.ProjectManagerRole)]
+        
+        //[RequireRole(Settings.ProjectManagerRole)]
         [SlashCommand("add-project", "Add a project to the bot!")]
         public async Task AddProject()
         {
@@ -87,7 +88,8 @@ namespace SNIPERBot
         /// Deletes a project, role, channel and embed through a button attached to the embed
         /// </summary>
         /// <returns></returns>
-        [RequireRole(Settings.ProjectManagerRole)]
+        
+        //[RequireRole(Settings.QueenRole)]
         [ComponentInteraction("delete-button")]
         private async Task DeleteProjectThroughButton()
         {
@@ -122,7 +124,8 @@ namespace SNIPERBot
         /// Edit a project's information, (optional) role and channel name, and replaces the embed
         /// </summary>
         /// <returns></returns>
-        [RequireRole(Settings.ProjectManagerRole)]
+        
+        ///[RequireRole(Settings.ProjectManagerRole)]
         [ComponentInteraction("edit-button")]
         private async Task EditProject()
         {
