@@ -103,14 +103,19 @@ namespace SNIPERBot
 
                     var previousField = new EmbedFieldBuilder()
                         .WithName(prop.Name + ": previous value")
-                        .WithValue(!string.IsNullOrEmpty(oldValue.ToString()) ? oldValue : "Not filled in");
+                        .WithValue(!string.IsNullOrEmpty(oldValue.ToString()) ? oldValue : "Not filled in")
+                        .WithIsInline(true);
 
                     var newField = new EmbedFieldBuilder()
                         .WithName(prop.Name + ": new value")
-                        .WithValue(!string.IsNullOrEmpty(newValue.ToString()) ? newValue : "Not filled in");
+                        .WithValue(!string.IsNullOrEmpty(newValue.ToString()) ? newValue : "Not filled in")
+                        .WithIsInline(true);
+
+                    var spacerField = new EmbedFieldBuilder();
 
                     embed.AddField(previousField);
                     embed.AddField(newField);
+                    embed.AddField("\u200b", '\u200b');
                 }
             }
 

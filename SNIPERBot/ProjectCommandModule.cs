@@ -39,17 +39,21 @@ namespace SNIPERBot
         /// </summary>
         /// <returns></returns>
         [SlashCommand("get-projects", "Gets the list for all registered projects and their embed URL")]
-        public async Task GetProjects()
+        public async Task GetProjects([Choice("All", "all"), Choice("Not yet minted", "unminted")] string MintStatus)
         {
             if (_projects.Count != 0)
             {
                 EmbedBuilder builder = new EmbedBuilder()
-                    .WithTitle("Projects currently available");
+                    .WithTitle(MintStatus == "unminted" ? "Projects that haven't minted yet" : "All projects");
 
                 ISocketMessageChannel channel = (ISocketMessageChannel) _guild.GetChannel(Settings.EmbedsChannelID);
 
                 foreach (var project in _projects)
                 {
+                    if (MintStatus == "unminted" && project.IsMinted == true)
+                    {
+                        continue;
+                    }
                     var embedMessage = await channel.GetMessageAsync(project.EmbedID);
                     var embedURL = embedMessage.GetJumpUrl();
 
@@ -72,7 +76,7 @@ namespace SNIPERBot
         /// Responds with a Modal form for adding a new project
         /// </summary>
         /// <returns></returns>
-        
+
         //[RequireRole(Settings.ProjectManagerRole)]
         [SlashCommand("add-project", "Add a project to the bot!")]
         public async Task AddProject()
@@ -283,6 +287,7 @@ namespace SNIPERBot
             var project = new Project();
             project.Id = _projects.Any() ? _projects.Max(x => x.Id) + 1 : 1;
             project.Name = modal.Name;
+            project.IsMinted = modal.IsMinted.ToLower().Equals("y") ? true : false;
             project.Description = modal.Description;
             project.Twitter = modal.Twitter;
             project.Discord = modal.Discord;
@@ -300,6 +305,7 @@ namespace SNIPERBot
         private Project EditProjectDetails(Project project, ProjectModal modal)
         {
             project.Name = modal.Name;
+            project.IsMinted = modal.IsMinted.ToLower().Equals("y") ? true : false;
             project.Description = modal.Description;
             project.Twitter = modal.Twitter;
             project.Discord = modal.Discord;
@@ -405,6 +411,11 @@ namespace SNIPERBot
                         .WithCurrentTimestamp()
                         .WithAuthor(Context.User);
 
+            var mintedField = new EmbedFieldBuilder()
+                .WithName("Minted?")
+                .WithValue(project.IsMinted ? "Yes" : "No");
+            embedBuilder.AddField(mintedField);
+
             var twitterField = new EmbedFieldBuilder()
             .WithName("Twitter")
             .WithIsInline(true);
@@ -438,6 +449,7 @@ namespace SNIPERBot
             var project = _projects.First(x => x.Id == projectId);
             var projectModal = new ProjectModal();
             projectModal.Name = project.Name;
+            projectModal.IsMinted = project.IsMinted ? "Y" : "N";
             projectModal.Description = project.Description;
             projectModal.Twitter = project.Twitter;
             projectModal.Discord = project.Discord;
@@ -480,6 +492,11 @@ namespace SNIPERBot
         [RequiredInput(true)]
         [InputLabel("Project Name")]
         public string Name { get; set; }
+
+        [ModalTextInput("project_minted", placeholder: "Y/N", maxLength: 1)]
+        [RequiredInput(true)]
+        [InputLabel("Minted?")]
+        public string IsMinted { get; set; }
 
         [ModalTextInput("project_description", style: TextInputStyle.Paragraph, placeholder: "Optional description of project", maxLength: 500)]
         [RequiredInput(false)]
