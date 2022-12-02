@@ -93,7 +93,7 @@ namespace SNIPERBot
         /// </summary>
         /// <returns></returns>
         
-        //[RequireRole(Settings.QueenRole)]
+        [RequireRole(Settings.QueenRole)]
         [ComponentInteraction("delete-button")]
         private async Task DeleteProjectThroughButton()
         {

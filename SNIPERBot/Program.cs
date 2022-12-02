@@ -69,6 +69,7 @@ public class Program
                 var ctx = new SocketInteractionContext(_client, interaction);
                 await _interactionService.ExecuteCommandAsync(ctx, scope.ServiceProvider);
             };
+            _client.Ready -= Client_Ready;
         }
         catch (ApplicationCommandException e)
         {

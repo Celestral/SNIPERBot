@@ -88,7 +88,7 @@ namespace SNIPERBot
         {
             var embed = new EmbedBuilder()
                 .WithTitle("PROJECT EDITED")
-                .WithDescription("A project has been edited by " + context.User + " with the following changes")
+                .WithDescription("A project has been edited by " + context.User.Mention + " with the following changes")
                 .WithColor(Color.Orange)
                 .WithCurrentTimestamp();
 
@@ -113,9 +113,9 @@ namespace SNIPERBot
 
                     var spacerField = new EmbedFieldBuilder();
 
+                    embed.AddField("\u200b", '\u200b');
                     embed.AddField(previousField);
                     embed.AddField(newField);
-                    embed.AddField("\u200b", '\u200b');
                 }
             }
 
