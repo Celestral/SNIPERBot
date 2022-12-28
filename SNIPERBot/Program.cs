@@ -1,80 +1,53 @@
-﻿using Discord;
-using Discord.Interactions;
-using Discord.Net;
+﻿using System.Text;
+using Azure;
+using Azure.Extensions.AspNetCore.Configuration.Secrets;
+using Azure.Identity;
+using Azure.Storage.Blobs;
+using Discord;
 using Discord.WebSocket;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Newtonsoft.Json;
-using SNIPERBot;
-using System.Reflection;
+using Microsoft.Extensions.Hosting;
+using SNIPERBot.Utils;
+
+namespace SNIPERBot;
 
 public class Program
 {
-    private DiscordSocketClient _client;
-    private InteractionService _interactionService;
-    private readonly IServiceProvider _serviceProvider;
-
-    public Program()
+    public static void Main(string[] args)
     {
-        _serviceProvider = CreateProvider();
-    }
-
-    static IServiceProvider CreateProvider()
-    {
+        Console.OutputEncoding = Encoding.UTF8;
         var config = new DiscordSocketConfig()
         {
             GatewayIntents = GatewayIntents.AllUnprivileged | GatewayIntents.GuildPresences
         };
 
-        var collection = new ServiceCollection()
-            .AddSingleton(config)
-            .AddSingleton<DiscordSocketClient>()
-            .AddSingleton<LoggingService>();
+        var builder = Host.CreateApplicationBuilder(args);
 
-        return collection.BuildServiceProvider();
-    }
-
-    static void Main(string[] args) => new Program().RunAsync(args).GetAwaiter().GetResult();
-
-    async Task RunAsync(string[] args)
-    {
-        _client = _serviceProvider.GetRequiredService<DiscordSocketClient>();
-       
-        _client.Log += async (msg) =>
+        if (builder.Environment.IsProduction())
         {
-            await Task.CompletedTask;
-            Console.WriteLine(msg);
-        };
+            var keyVaultEndpoint = $"https://{builder.Configuration["KeyVaultName"]}.vault.azure.net/";
 
-        var token = File.ReadAllText("token.txt");
-
-        await _client.LoginAsync(TokenType.Bot, token);
-        await _client.StartAsync();
-
-        _client.Ready += Client_Ready;
-
-        await Task.Delay(-1);
-    }
-
-    public async Task Client_Ready()
-    {
-        try
-        {
-            _interactionService = new InteractionService(_client);
-            await _interactionService.AddModulesAsync(Assembly.GetEntryAssembly(), _serviceProvider);
-            await _interactionService.RegisterCommandsToGuildAsync(Settings.GuildId);
-
-            _client.InteractionCreated += async interaction =>
-            {
-                var scope = _serviceProvider.CreateScope();
-                var ctx = new SocketInteractionContext(_client, interaction);
-                await _interactionService.ExecuteCommandAsync(ctx, scope.ServiceProvider);
-            };
-            _client.Ready -= Client_Ready;
+            builder.Configuration.AddAzureKeyVault(new Uri(keyVaultEndpoint), new DefaultAzureCredential(),
+                new AzureKeyVaultConfigurationOptions
+                {
+                    ReloadInterval = TimeSpan.FromMinutes(60),
+                    Manager = new PrefixKeyVaultSecretManager("Sniper")
+                });
+            builder.Services.AddSingleton(new BlobClient(new Uri(builder.Configuration["Storage:ProjectLocation"]), new DefaultAzureCredential()));
         }
-        catch (ApplicationCommandException e)
+        else
         {
-            var json = JsonConvert.SerializeObject(e.Errors, Formatting.Indented);
-            Console.WriteLine(json);
+            // Development 
+            builder.Services.AddSingleton(new BlobClient(new Uri(builder.Configuration["Storage:ProjectLocation"]), new AzureSasCredential(builder.Configuration["Authentication:BlobStorageSas"])));
         }
+
+        builder.Services.AddSingleton(config);
+        builder.Services.AddSingleton<DiscordSocketClient>();
+        builder.Services.AddSingleton<LoggingService>();
+        builder.Services.AddHostedService<SniperHostedService>();
+
+        var app = builder.Build();
+        app.Run();
     }
 }

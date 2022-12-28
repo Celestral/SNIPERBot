@@ -1,0 +1,19 @@
+{
+  "profiles": {
+    "SNIPERBot": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development"
+      }
+    },
+    "SNIPERBot (production)": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Production"
+      }
+    },
+    "Docker": {
+      "commandName": "Docker"
+    }
+  }
+}
