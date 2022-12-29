@@ -20,6 +20,12 @@ jobs:
     steps:
       - name: Checkout to the branch
         uses: actions/checkout@v2
+        
+      - name: Update Keyvault location
+        uses: datamonsters/replace-action@v2
+        with:
+         files: 'SNIPERBot/appsettings.json'
+         replacements: '%%KeyVault%%=${{ secrets.KEYVAULTNAME }}'
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
