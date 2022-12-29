@@ -54,11 +54,11 @@ namespace SNIPERBot
 
                 ISocketMessageChannel channel = (ISocketMessageChannel) _guild.GetChannel(Settings.EmbedsChannelID);
 
-                foreach (var project in _projects)
+                await Parallel.ForEachAsync(_projects, async (project, token) =>
                 {
                     if (MintStatus == "unminted" && project.IsMinted == true)
                     {
-                        continue;
+                        return;
                     }
                     var embedMessage = await channel.GetMessageAsync(project.EmbedID);
                     var embedURL = embedMessage.GetJumpUrl();
@@ -68,7 +68,7 @@ namespace SNIPERBot
                         .WithValue($"[Details]({embedURL})");
 
                     builder.AddField(field);
-                }
+                });
 
                 await Context.Interaction.FollowupAsync(embed: builder.Build(), ephemeral: true);
             }
