@@ -18,7 +18,7 @@ public sealed class SniperHostedService : IHostedService
     private readonly DiscordSocketClient _client;
     private readonly IServiceProvider _serviceProvider;
     private readonly IConfiguration _configuration;
-    private InteractionService _interactionService;
+    private InteractionService _interactionService = null!;
 
     public SniperHostedService(
         ILogger<SniperHostedService> logger,
@@ -47,7 +47,6 @@ public sealed class SniperHostedService : IHostedService
             Console.WriteLine(msg);
         };
 
-        //var token = File.ReadAllText("token.txt");
         var token = _configuration["Authentication:SniperToken"];
 
         await _client.LoginAsync(TokenType.Bot, token);

@@ -16,14 +16,15 @@ public class Program
 {
     public static void Main(string[] args)
     {
+        // Forcing UTF8
         Console.OutputEncoding = Encoding.UTF8;
-        var config = new DiscordSocketConfig()
-        {
-            GatewayIntents = GatewayIntents.AllUnprivileged | GatewayIntents.GuildPresences
-        };
 
+        // Use application builder to configure the console app
         var builder = Host.CreateApplicationBuilder(args);
 
+        // Configure:
+        // - Key Vault when using production (proper secret management)
+        // - Configure Blob Storage for sharing the projects
         if (builder.Environment.IsProduction())
         {
             var keyVaultEndpoint = $"https://{builder.Configuration["KeyVaultName"]}.vault.azure.net/";
@@ -34,17 +35,26 @@ public class Program
                     ReloadInterval = TimeSpan.FromMinutes(60),
                     Manager = new PrefixKeyVaultSecretManager("Sniper")
                 });
-            builder.Services.AddSingleton(new BlobClient(new Uri(builder.Configuration["Storage:ProjectLocation"]), new DefaultAzureCredential()));
+            builder.Services.AddSingleton(new BlobClient(new Uri(builder.Configuration["Storage:ProjectLocation"]!), new DefaultAzureCredential()));
         }
         else
         {
             // Development 
-            builder.Services.AddSingleton(new BlobClient(new Uri(builder.Configuration["Storage:ProjectLocation"]), new AzureSasCredential(builder.Configuration["Authentication:BlobStorageSas"])));
+            builder.Services.AddSingleton(new BlobClient(new Uri(builder.Configuration["Storage:ProjectLocation"]!), new AzureSasCredential(builder.Configuration["Authentication:BlobStorageSas"]!)));
         }
+
+        // Additional configuration
+        var config = new DiscordSocketConfig()
+        {
+            GatewayIntents = GatewayIntents.AllUnprivileged | GatewayIntents.GuildPresences
+        };
 
         builder.Services.AddSingleton(config);
         builder.Services.AddSingleton<DiscordSocketClient>();
         builder.Services.AddSingleton<LoggingService>();
+
+        // Run the main logic inside a hosted service
+        // This will make sure it will be properly started and stopped
         builder.Services.AddHostedService<SniperHostedService>();
 
         var app = builder.Build();
