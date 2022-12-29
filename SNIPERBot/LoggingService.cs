@@ -1,7 +1,7 @@
 ﻿using Discord;
-using Discord.Commands;
 using Discord.Interactions;
 using Discord.WebSocket;
+using SNIPERBot.Utils;
 using System.Reflection;
 
 namespace SNIPERBot

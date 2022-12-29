@@ -1,8 +1,10 @@
-﻿using Discord;
+﻿using Azure.Storage.Blobs;
+using Discord;
 using Discord.Interactions;
 using Discord.Rest;
 using Discord.WebSocket;
 using Newtonsoft.Json;
+using SNIPERBot.Utils;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,19 +19,21 @@ namespace SNIPERBot
         private DiscordSocketClient _client;
         private static SocketGuild _guild;
         private LoggingService _loggingService;
+        private readonly BlobClient _blobClient;
 
         /// <summary>
         /// Reads existing projects from file during startup
         /// </summary>
         /// <param name="client"></param>
-        public ProjectCommandModule(DiscordSocketClient client, LoggingService loggingService)
+        public ProjectCommandModule(DiscordSocketClient client, LoggingService loggingService, BlobClient blobClient)
         {
-            if (File.Exists("projects.json"))
+            if (blobClient.Exists() && !_projects.Any())
             {
-                _projects = JsonConvert.DeserializeObject<List<Project>>(File.ReadAllText("projects.json"));
+                _projects = JsonConvert.DeserializeObject<List<Project>>(blobClient.DownloadContent().Value.Content.ToString());
             }
             _client = client;
             _loggingService = loggingService;
+            _blobClient = blobClient;
             _guild = _client.GetGuild(Settings.GuildId);
         }
         #region Slash Commands
@@ -41,6 +45,8 @@ namespace SNIPERBot
         [SlashCommand("get-projects", "Gets the list for all registered projects and their embed URL")]
         public async Task GetProjects([Choice("All", "all"), Choice("Not yet minted", "unminted")] string MintStatus)
         {
+            await Context.Interaction.RespondAsync("Difficult question. Thinking about it, will come back to you shortly...", ephemeral: true);
+
             if (_projects.Count != 0)
             {
                 EmbedBuilder builder = new EmbedBuilder()
@@ -48,11 +54,11 @@ namespace SNIPERBot
 
                 ISocketMessageChannel channel = (ISocketMessageChannel) _guild.GetChannel(Settings.EmbedsChannelID);
 
-                foreach (var project in _projects)
+                await Parallel.ForEachAsync(_projects, async (project, token) =>
                 {
                     if (MintStatus == "unminted" && project.IsMinted == true)
                     {
-                        continue;
+                        return;
                     }
                     var embedMessage = await channel.GetMessageAsync(project.EmbedID);
                     var embedURL = embedMessage.GetJumpUrl();
@@ -62,13 +68,13 @@ namespace SNIPERBot
                         .WithValue($"[Details]({embedURL})");
 
                     builder.AddField(field);
-                }
+                });
 
-                await Context.Interaction.RespondAsync(embed: builder.Build(), ephemeral: true);
+                await Context.Interaction.FollowupAsync(embed: builder.Build(), ephemeral: true);
             }
             else
             {
-                await Context.Interaction.RespondAsync("No projects have been added yet", ephemeral: true);
+                await Context.Interaction.FollowupAsync("No projects have been added yet", ephemeral: true);
             }
         }
 
@@ -217,7 +223,7 @@ namespace SNIPERBot
         private void SaveProjects()
         {
             var json = JsonConvert.SerializeObject(_projects, Formatting.Indented);
-            File.WriteAllText("projects.json", json);
+            _blobClient.Upload(BinaryData.FromString(json), overwrite: true);
         }
 
         /// <summary>
