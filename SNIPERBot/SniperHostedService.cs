@@ -12,7 +12,7 @@ using SNIPERBot.Utils;
 
 namespace SNIPERBot;
 
-public sealed class SniperHostedService : IHostedService
+public sealed class SniperHostedService : BackgroundService
 {
     private readonly ILogger _logger;
     private readonly DiscordSocketClient _client;
@@ -22,7 +22,6 @@ public sealed class SniperHostedService : IHostedService
 
     public SniperHostedService(
         ILogger<SniperHostedService> logger,
-        IHostApplicationLifetime appLifetime,
         DiscordSocketClient client,
         IServiceProvider serviceProvider,
         IConfiguration configuration)
@@ -31,15 +30,12 @@ public sealed class SniperHostedService : IHostedService
         _client = client;
         _serviceProvider = serviceProvider;
         _configuration = configuration;
-
-        appLifetime.ApplicationStarted.Register(OnStarted);
-        appLifetime.ApplicationStopping.Register(OnStopping);
-        appLifetime.ApplicationStopped.Register(OnStopped);
     }
 
-    public async Task StartAsync(CancellationToken cancellationToken)
+    /// <inheritdoc />
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("1. StartAsync has been called.");
+        _logger.LogInformation("Started the Sniper Service");
 
         _client.Log += async (msg) =>
         {
@@ -53,6 +49,15 @@ public sealed class SniperHostedService : IHostedService
         await _client.StartAsync();
 
         _client.Ready += Client_Ready;
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            await Task.Delay(TimeSpan.FromMinutes(15), stoppingToken);
+            _logger.LogInformation("Still waiting");
+        }
+
+        _logger.LogInformation("Stopping the Sniper Service");
+        await _client.StopAsync();
     }
 
     private async Task Client_Ready()
@@ -76,27 +81,5 @@ public sealed class SniperHostedService : IHostedService
             var json = JsonConvert.SerializeObject(e.Errors, Formatting.Indented);
             Console.WriteLine(json);
         }
-    }
-
-    public Task StopAsync(CancellationToken cancellationToken)
-    {
-        _logger.LogInformation("4. StopAsync has been called.");
-
-        return Task.CompletedTask;
-    }
-
-    private void OnStarted()
-    {
-        _logger.LogInformation("2. OnStarted has been called.");
-    }
-
-    private void OnStopping()
-    {
-        _logger.LogInformation("3. OnStopping has been called.");
-    }
-
-    private void OnStopped()
-    {
-        _logger.LogInformation("5. OnStopped has been called.");
     }
 }
