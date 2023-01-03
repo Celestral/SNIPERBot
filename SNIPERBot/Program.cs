@@ -56,6 +56,7 @@ public class Program
         // Run the main logic inside a hosted service
         // This will make sure it will be properly started and stopped
         builder.Services.AddHostedService<SniperHostedService>();
+        builder.Services.AddHostedService<PodHealthyListener>();
 
         var app = builder.Build();
         app.Run();
