@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using System.Text;
 using Discord;
 using Discord.Interactions;
 using Discord.Net;
